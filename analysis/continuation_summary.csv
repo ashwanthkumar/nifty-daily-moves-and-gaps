@@ -1,0 +1,3 @@
+Type,Count,Mean_Streak,Median_Streak,Max_Streak,Fwd_1d_Mean,Fwd_1d_WinRate,Fwd_2d_Mean,Fwd_2d_WinRate,Fwd_3d_Mean,Fwd_3d_WinRate,Fwd_5d_Mean,Fwd_5d_WinRate,Fwd_10d_Mean,Fwd_10d_WinRate,Fwd_20d_Mean,Fwd_20d_WinRate
+Bullish,1446,1.3,1.0,12,0.117,57.3,0.154,57.7,0.209,57.5,0.248,58.1,0.51,59.1,1.034,61.2
+Bearish,1190,1.07,1.0,7,-0.021,51.7,0.028,49.4,0.065,48.7,0.201,46.1,0.403,43.8,0.608,39.4
