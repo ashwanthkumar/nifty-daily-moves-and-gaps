@@ -1,0 +1,7 @@
+Data period: 2008-03-03 to 2026-03-13
+Total trading days analyzed: 4401
+
+Mean Intraday Movement: 2.01%
+Mean Abs Gap: 0.36%
+Mean VIX: 19.83
+Median VIX: 17.06

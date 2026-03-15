@@ -1,0 +1,4 @@
+Regime,N,Intraday_Pct vs VIX (ρ),Intraday_Pct vs Abs_Gap_Pct (ρ),Abs_Gap_Pct vs VIX (ρ)
+Low VIX (< 17.1),2196,0.382,0.0865,0.1043
+High VIX (>= 17.1),2205,0.6328,-0.1199,-0.1955
+Very High VIX (>= 22.1),1102,0.6052,-0.1646,-0.2759

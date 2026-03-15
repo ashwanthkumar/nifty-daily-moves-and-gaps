@@ -1,0 +1,5 @@
+Pair,Best Lag,Correlation at Best Lag
+VIX → Intraday Movement,-1,0.7099
+Intraday Movement → VIX,1,0.7099
+Abs Gap → Intraday Movement,0,0.1679
+VIX → Abs Gap,-1,0.1363

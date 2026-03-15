@@ -1,0 +1,7 @@
+Pair,Pearson r,Pearson p,Spearman ρ,Spearman p,Kendall τ,Kendall p
+Intraday Movement vs VIX,0.7073,0.00e+00,0.6843,0.00e+00,0.4992,0.00e+00
+Intraday Movement vs Abs Gap,0.1679,3.35e-29,-0.0067,6.55e-01,-0.0002,9.85e-01
+Intraday Movement vs Gap (signed),-0.086,1.08e-08,-0.0921,9.26e-10,-0.0607,1.53e-09
+Abs Gap vs VIX,0.1319,1.57e-18,-0.0182,2.27e-01,-0.0024,8.14e-01
+VIX vs Gap (signed),-0.0483,1.36e-03,-0.0746,7.37e-07,-0.0457,5.64e-06
+Intraday Movement vs Daily Return,-0.0653,1.47e-05,-0.0982,6.65e-11,-0.0703,2.66e-12
