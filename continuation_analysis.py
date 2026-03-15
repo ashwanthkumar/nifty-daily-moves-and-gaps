@@ -485,6 +485,234 @@ def print_velocity_summary(bull_df, bear_df):
               f"  {label:<35} {bull_val:>12{fmt}} {bear_val:>12{fmt}}")
 
 
+def measure_recovery(df, cont_df, direction, max_lookforward=252):
+    """
+    For each breakout, measure how many days until price recovers back
+    to the breakout-day close level.
+
+    For bearish: recovery = close >= breakdown day close
+    For bullish: recovery = close <= breakout day close (i.e. gives back the gains)
+
+    Returns the cont_df with added columns:
+    - Days_To_Recovery: trading days until recovery (NaN if not recovered within max_lookforward)
+    - Max_Drawdown_Pct: worst adverse move before recovery (for bearish: how much further it fell)
+    """
+    recovery_days = []
+    max_adverse = []
+
+    for _, row in cont_df.iterrows():
+        date = row["Date"]
+        base_close = row["Close"]
+        loc = df.index.get_loc(date)
+
+        recovered = False
+        worst = 0.0
+        look_ahead = min(max_lookforward + 1, len(df) - loc)
+
+        for fwd in range(1, look_ahead):
+            fwd_row = df.iloc[loc + fwd]
+            if direction == "bear":
+                # Track how much further it fell
+                drawdown = (fwd_row["Low"] - base_close) / base_close * 100
+                worst = min(worst, drawdown)
+                # Recovery: close back at or above breakdown level
+                if fwd_row["Close"] >= base_close:
+                    recovery_days.append(fwd)
+                    max_adverse.append(abs(worst))
+                    recovered = True
+                    break
+            else:
+                # Track how much further it ran up
+                excursion = (fwd_row["High"] - base_close) / base_close * 100
+                worst = max(worst, excursion)
+                # Recovery (giveback): close back at or below breakout level
+                if fwd_row["Close"] <= base_close:
+                    recovery_days.append(fwd)
+                    max_adverse.append(abs(worst))
+                    recovered = True
+                    break
+
+        if not recovered:
+            recovery_days.append(np.nan)
+            max_adverse.append(abs(worst) if direction == "bear" else abs(worst))
+
+    cont_df = cont_df.copy()
+    cont_df["Days_To_Recovery"] = recovery_days
+    cont_df["Max_Adverse_Pct"] = max_adverse
+    return cont_df
+
+
+def print_recovery_stats(cont_df, label):
+    """Print recovery statistics for bearish breakdowns."""
+    recovered = cont_df.dropna(subset=["Days_To_Recovery"])
+    not_recovered = cont_df[cont_df["Days_To_Recovery"].isna()]
+
+    print(f"\n{'='*70}")
+    print(f"  {label}")
+    print(f"{'='*70}")
+    print(f"  Total breakdowns: {len(cont_df)}")
+    print(f"  Recovered within 252 days: {len(recovered)} ({len(recovered)/len(cont_df)*100:.1f}%)")
+    print(f"  Not recovered within 252 days: {len(not_recovered)} ({len(not_recovered)/len(cont_df)*100:.1f}%)")
+    print()
+
+    if len(recovered) > 0:
+        days = recovered["Days_To_Recovery"]
+        print("  Days to Recovery (among recovered):")
+        print(f"    Mean:   {days.mean():.1f} days")
+        print(f"    Median: {days.median():.1f} days")
+        print(f"    P25:    {days.quantile(0.25):.0f} days")
+        print(f"    P75:    {days.quantile(0.75):.0f} days")
+        print(f"    P90:    {days.quantile(0.90):.0f} days")
+        print(f"    Max:    {days.max():.0f} days")
+        print()
+
+        # Recovery buckets
+        buckets = [(1, 1), (2, 2), (3, 5), (6, 10), (11, 20), (21, 60), (61, 252)]
+        print("  Recovery Time Distribution:")
+        for lo, hi in buckets:
+            count = ((days >= lo) & (days <= hi)).sum()
+            pct = count / len(cont_df) * 100
+            label_range = f"{lo}d" if lo == hi else f"{lo}-{hi}d"
+            bar = "#" * int(pct)
+            print(f"    {label_range:>8}: {count:4d} ({pct:5.1f}%) {bar}")
+
+        print()
+        print(f"  Max adverse move before recovery (median): {recovered['Max_Adverse_Pct'].median():.3f}%")
+        print(f"  Max adverse move before recovery (mean):   {recovered['Max_Adverse_Pct'].mean():.3f}%")
+
+
+def plot_recovery_distribution(bear_df):
+    """Plot distribution of recovery times after bearish breakdowns."""
+    recovered = bear_df.dropna(subset=["Days_To_Recovery"])
+    not_recovered_count = bear_df["Days_To_Recovery"].isna().sum()
+
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    # 1. Histogram of recovery days
+    ax = axes[0, 0]
+    days = recovered["Days_To_Recovery"]
+    ax.hist(days, bins=50, color="crimson", alpha=0.7, edgecolor="white")
+    ax.axvline(days.median(), color="black", linestyle="--", linewidth=1.5,
+               label=f"Median={days.median():.0f} days")
+    ax.axvline(days.mean(), color="orange", linestyle="--", linewidth=1.5,
+               label=f"Mean={days.mean():.0f} days")
+    ax.set_xlabel("Days to Recovery")
+    ax.set_ylabel("Frequency")
+    ax.set_title(f"Recovery Time Distribution (n={len(recovered)}, {not_recovered_count} never recovered)")
+    ax.legend()
+
+    # 2. CDF of recovery
+    ax = axes[0, 1]
+    sorted_days = np.sort(days.values)
+    cdf = np.arange(1, len(sorted_days) + 1) / len(bear_df)  # denominator includes non-recovered
+    ax.plot(sorted_days, cdf * 100, color="crimson", linewidth=2)
+    ax.axhline(50, color="gray", linestyle="--", linewidth=0.5)
+    ax.axhline(75, color="gray", linestyle="--", linewidth=0.5)
+    ax.axhline(90, color="gray", linestyle="--", linewidth=0.5)
+    # Mark key percentiles
+    for pct_target in [50, 75, 90]:
+        idx = np.searchsorted(cdf * 100, pct_target)
+        if idx < len(sorted_days):
+            ax.annotate(f"{pct_target}% by day {sorted_days[idx]:.0f}",
+                        xy=(sorted_days[idx], pct_target),
+                        xytext=(sorted_days[idx] + 15, pct_target - 5),
+                        arrowprops=dict(arrowstyle="->", color="black"),
+                        fontsize=9)
+    ax.set_xlabel("Days After Breakdown")
+    ax.set_ylabel("% of Breakdowns Recovered")
+    ax.set_title("Cumulative Recovery Rate")
+    ax.set_xlim(0, 260)
+    ax.set_ylim(0, 105)
+
+    # 3. Recovery time vs breakdown magnitude
+    ax = axes[1, 0]
+    ax.scatter(recovered["Breakout_Magnitude_Pct"], recovered["Days_To_Recovery"],
+               alpha=0.2, s=10, color="crimson")
+    from scipy import stats as sp_stats
+    slope, intercept, r, p, se = sp_stats.linregress(
+        recovered["Breakout_Magnitude_Pct"], recovered["Days_To_Recovery"])
+    x_line = np.linspace(0, recovered["Breakout_Magnitude_Pct"].quantile(0.95), 100)
+    ax.plot(x_line, slope * x_line + intercept, color="black", linewidth=1.5,
+            label=f"r={r:.3f}")
+    ax.set_xlabel("Breakdown Magnitude %")
+    ax.set_ylabel("Days to Recovery")
+    ax.set_title("Does Breakdown Size Predict Recovery Time?")
+    ax.set_xlim(0, recovered["Breakout_Magnitude_Pct"].quantile(0.95))
+    ax.set_ylim(0, min(260, recovered["Days_To_Recovery"].quantile(0.95)))
+    ax.legend()
+
+    # 4. Max adverse move vs recovery time
+    ax = axes[1, 1]
+    ax.scatter(recovered["Days_To_Recovery"], recovered["Max_Adverse_Pct"],
+               alpha=0.2, s=10, color="crimson")
+    ax.set_xlabel("Days to Recovery")
+    ax.set_ylabel("Max Adverse Move % (further drop before recovery)")
+    ax.set_title("How Deep Before Recovery?")
+    ax.set_xlim(0, min(260, recovered["Days_To_Recovery"].quantile(0.95)))
+    ax.set_ylim(0, recovered["Max_Adverse_Pct"].quantile(0.95))
+
+    plt.suptitle("NIFTY 50 — Recovery After Bearish Breakdowns", fontsize=14)
+    plt.tight_layout()
+    fig.savefig(OUTPUT_DIR / "bearish_recovery.png", dpi=150)
+    print("Saved bearish_recovery.png")
+
+
+def plot_recovery_by_streak(bear_df):
+    """How does initial streak length affect recovery time?"""
+    recovered = bear_df.dropna(subset=["Days_To_Recovery"]).copy()
+    max_s = min(6, recovered["Streak"].max())
+    grouped = recovered[recovered["Streak"] <= max_s].groupby("Streak")
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Mean recovery time by streak
+    ax = axes[0]
+    means = grouped["Days_To_Recovery"].mean()
+    medians = grouped["Days_To_Recovery"].median()
+    counts = grouped["Days_To_Recovery"].count()
+    x = np.arange(len(means))
+    ax.bar(x - 0.15, means, width=0.3, color="crimson", alpha=0.7, label="Mean")
+    ax.bar(x + 0.15, medians, width=0.3, color="crimson", alpha=0.4, label="Median")
+    ax.set_xticks(x)
+    ax.set_xticklabels(means.index)
+    ax.set_xlabel("Initial Streak Length (days)")
+    ax.set_ylabel("Days to Recovery")
+    ax.set_title("Recovery Time by Streak Length")
+    ax.legend()
+    for i, c in enumerate(counts):
+        ax.text(i, max(means.iloc[i], medians.iloc[i]) + 1, f"n={c}", ha="center", fontsize=8)
+
+    # % not recovered by streak
+    ax = axes[1]
+    not_recovered_pct = []
+    streak_vals = range(0, max_s + 1)
+    for s in streak_vals:
+        subset = bear_df[bear_df["Streak"] == s]
+        if len(subset) > 0:
+            nr = subset["Days_To_Recovery"].isna().sum() / len(subset) * 100
+        else:
+            nr = 0
+        not_recovered_pct.append(nr)
+    ax.bar(list(streak_vals), not_recovered_pct, color="darkred", alpha=0.7)
+    ax.set_xlabel("Initial Streak Length (days)")
+    ax.set_ylabel("% Not Recovered within 252 days")
+    ax.set_title("Non-Recovery Rate by Streak Length")
+    ax.set_xticks(list(streak_vals))
+
+    plt.suptitle("NIFTY 50 — Recovery Dynamics by Bearish Streak Length", fontsize=14)
+    plt.tight_layout()
+    fig.savefig(OUTPUT_DIR / "recovery_by_streak.png", dpi=150)
+    print("Saved recovery_by_streak.png")
+
+
+def save_recovery_csv(bear_df):
+    """Save recovery data to CSV."""
+    cols = ["Date", "Close", "Streak", "Breakout_Magnitude_Pct", "Peak_Excursion_Pct",
+            "Days_To_Peak", "Velocity_Pct_Per_Day", "Days_To_Recovery", "Max_Adverse_Pct"]
+    bear_df[cols].to_csv(OUTPUT_DIR / "bearish_recovery_data.csv", index=False)
+    print("Saved bearish_recovery_data.csv")
+
+
 def save_summary(bull_df, bear_df):
     """Save summary CSV."""
     periods = [1, 2, 3, 5, 10, 20]
@@ -544,6 +772,14 @@ def main():
     plot_magnitude_vs_continuation(bull_df, bear_df)
     plot_velocity_by_streak(bull_df, bear_df)
     print_velocity_summary(bull_df, bear_df)
+
+    # Recovery analysis
+    bear_df = measure_recovery(df, bear_df, "bear")
+    print_recovery_stats(bear_df, "BEARISH BREAKDOWN RECOVERY (days to return to breakdown level)")
+    plot_recovery_distribution(bear_df)
+    plot_recovery_by_streak(bear_df)
+    save_recovery_csv(bear_df)
+
     save_summary(bull_df, bear_df)
 
     print("\nDone! All outputs in analysis/")

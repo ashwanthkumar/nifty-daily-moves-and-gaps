@@ -23,6 +23,7 @@ Analysis of NIFTY 50 intraday price movement, overnight gaps, and their correlat
   - [Continuation Return by Streak Length](#continuation-return-by-streak-length)
   - [Breakout Velocity and Magnitude](#breakout-velocity-and-magnitude)
   - [Does Breakout Size Predict Continuation?](#does-breakout-size-predict-continuation)
+  - [Recovery After Bearish Breakdowns](#recovery-after-bearish-breakdowns)
 - [Continuation Summary](#continuation-summary)
 
 ---
@@ -251,6 +252,43 @@ Breakout magnitude (how far beyond the prev high/low) is binned into quintiles t
 
 **Chart**: `analysis/magnitude_vs_continuation.png`
 
+### Recovery After Bearish Breakdowns
+
+After a bearish breakdown (close < prev low), how long until the market closes back at or above the breakdown-day close?
+
+**98% of breakdowns recover within 252 trading days (1 year).**
+
+| Metric | Value |
+|--------|-------|
+| Recovered within 1 year | 98.0% (1,166 of 1,190) |
+| Median recovery time | **2 days** |
+| Mean recovery time | 10.2 days |
+| P75 | 5 days |
+| P90 | 22 days |
+
+Recovery time distribution:
+
+| Window | % of all breakdowns |
+|--------|-------------------|
+| Next day (1d) | 48.2% |
+| 2 days | 12.5% |
+| 3-5 days | 13.8% |
+| 6-10 days | 8.2% |
+| 11-20 days | 5.0% |
+| 21-60 days | 6.1% |
+| 61-252 days | 4.1% |
+| Never (within 1 year) | 2.0% |
+
+**Key finding**: Nearly half of all bearish breakdowns recover the very next day. 75% recover within 5 days. Only 2% fail to recover within a year -- these correspond to major crashes (2008 GFC, COVID 2020 crash).
+
+**Recovery by streak length**: Longer bearish streaks take significantly longer to recover. Streak-0 breakdowns (immediate reversal) recover in 1 day median. Streak-4+ breakdowns take 14-22 days median and have a 7-13% chance of not recovering within a year.
+
+**Breakdown size doesn't predict recovery time** (r=-0.012). A large single-day breakdown recovers just as fast as a small one. What matters is whether it *continues* falling (streak length), not how far it fell on day 1.
+
+**Max adverse move**: Before recovering, the median further drop is only 0.81%. Even in breakdowns, the typical "pain" beyond the breakdown day is less than 1%.
+
+**Charts**: `analysis/bearish_recovery.png`, `analysis/recovery_by_streak.png`
+
 ---
 
 ## Continuation Summary
@@ -268,3 +306,7 @@ Breakout magnitude (how far beyond the prev high/low) is binned into quintiles t
 6. **Bearish breakouts are faster (higher velocity)**: 0.46%/day median velocity vs 0.31%/day for bullish. Bears reach peak excursion in 2 days (median) vs 3 for bulls. Same peak magnitude (~1.3%), but bears get there 50% faster.
 
 7. **Breakout size is a poor predictor**: Initial magnitude only weakly predicts peak excursion (r~0.17) and barely predicts streak length. You can't tell from the breakout day alone whether it will continue.
+
+8. **Bearish breakdowns recover fast**: Median recovery is just 2 days. 48% recover the next day, 75% within 5 days. Only 2% fail to recover within a year (major crashes). The breakdown magnitude doesn't predict recovery time -- what matters is whether the streak continues.
+
+9. **Longer bearish streaks are harder to recover from**: Streak-0 recovers in 1 day. Streak-4+ takes 14-22 days median with up to 13% non-recovery risk within a year.
