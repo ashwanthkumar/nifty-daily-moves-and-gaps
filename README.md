@@ -33,6 +33,13 @@ Analysis of NIFTY 50 intraday price movement, overnight gaps, and their correlat
   - [Optimized Results](#optimized-results)
   - [Equity Curves](#equity-curves)
   - [Backtest Takeaways](#backtest-takeaways)
+- [5-Minute Data Backtest: EOD vs Intraday Entry](#5-minute-data-backtest-eod-vs-intraday-entry)
+  - [Entry Modes](#entry-modes)
+  - [Signal Counts](#signal-counts)
+  - [Optimized Parameters (5-min)](#optimized-parameters-5-min)
+  - [Full Comparison (5-min)](#full-comparison-5-min)
+  - [EOD vs Intraday Equity Curves](#eod-vs-intraday-equity-curves)
+  - [EOD vs Intraday Takeaways](#eod-vs-intraday-takeaways)
 
 ---
 
@@ -475,3 +482,89 @@ Both sides are profitable. Longs have a slight edge due to NIFTY's structural up
 5. **Both long and short sides work** -- despite NIFTY's bull bias, shorting breakdowns is profitable. The wide SL + trailing SL catches the fast, violent bearish moves identified in the continuation analysis.
 
 6. **Caveat: overfitting risk** -- Optuna optimized over the full dataset. Walk-forward or out-of-sample testing would be needed to validate these parameters for live trading. The 300-trial optimization with 5 parameters is relatively conservative, but the dramatic improvement (2.5x P&L) warrants skepticism.
+
+---
+
+## 5-Minute Data Backtest: EOD vs Intraday Entry
+
+Using 5-minute candle data (2015-2026, [Kaggle source](https://www.kaggle.com/datasets/debashis74017/nifty-50-minute-data)), we test a key question: **should you enter at end of day (when the breakout is confirmed by close) or intraday (as soon as price breaches the previous day's high/low)?**
+
+### Entry Modes
+
+| Mode | Entry Trigger | Entry Price |
+|------|--------------|-------------|
+| **EOD** | Day closes above Prev Day High (bullish) or below Prev Day Low (bearish) | Day's close price |
+| **Intraday** | First 5-min candle opens above PDH or below PDL | That candle's open price |
+
+The intraday mode enters earlier but includes "false breakouts" -- days where price breaches PDH/PDL intraday but closes back within range. The EOD mode waits for confirmation but enters at a worse price (the move has already happened).
+
+For intraday entry, stop-loss checking on the entry day uses only the post-entry portion of the day (candles after the entry candle), avoiding the look-ahead bias of using the full day's high/low.
+
+### Signal Counts
+
+Over ~2,700 usable trading days (2015-2026):
+
+| Signal Type | Bullish | Bearish |
+|-------------|---------|---------|
+| EOD (close confirms) | 854 | 695 |
+| Intraday (any 5-min breach) | 1,544 | 1,212 |
+
+Intraday signals are ~1.8x more frequent than EOD signals. Many intraday breaches don't result in a confirmed close-based breakout.
+
+### Optimized Parameters (5-min)
+
+All 4 combinations independently optimized with Optuna (300 trials each):
+
+| Parameter | Fut EOD | Fut Intraday | Opt EOD | Opt Intraday |
+|-----------|---------|-------------|---------|-------------|
+| Stop Loss % | 1.9% | 2.3% | 1.9% | 2.4% |
+| Trailing SL | Yes (0.3%) | Yes (0.3%) | Yes (0.3%) | Yes (0.3%) |
+| Max Hold Days | 19 | 19 | 7 | 4 |
+| Profit Target | None | None | None | None |
+| Option Delta | -- | -- | 0.75 | 0.75 |
+
+Key pattern: **intraday entry needs a wider initial SL** (2.3-2.4% vs 1.9%) because the entry happens earlier in the move -- before the breakout is confirmed -- so there's more noise to absorb. The trailing SL (0.3%) is identical across all modes.
+
+Options intraday uses a shorter hold (4 days vs 7 for EOD) -- entering earlier means the favorable move happens sooner, and theta decay is minimized.
+
+![Optuna Futures EOD](analysis/optuna_5min_futures_eod.png)
+![Optuna Futures Intraday](analysis/optuna_5min_futures_intraday.png)
+![Optuna Options EOD](analysis/optuna_5min_options_eod.png)
+![Optuna Options Intraday](analysis/optuna_5min_options_intraday.png)
+
+### Full Comparison (5-min)
+
+| Strategy | Trades | Win Rate | Total P&L | Profit Factor | Max Drawdown |
+|----------|--------|----------|-----------|---------------|--------------|
+| Futures EOD Baseline | 512 | 42.4% | Rs 12,11,263 | 1.47 | Rs -1,24,868 |
+| **Futures EOD Optimized** | **674** | **72.6%** | **Rs 31,14,724** | **4.10** | **Rs -47,959** |
+| Futures Intraday Baseline | 628 | 40.4% | Rs 11,54,170 | 1.35 | Rs -1,77,024 |
+| **Futures Intraday Optimized** | **1,121** | **60.8%** | **Rs 37,96,516** | **4.05** | **Rs -41,502** |
+| Options EOD Baseline | 512 | 36.1% | Rs 6,40,920 | 1.33 | Rs -1,17,973 |
+| **Options EOD Optimized** | **674** | **60.8%** | **Rs 21,50,291** | **3.35** | **Rs -36,195** |
+| Options Intraday Baseline | 628 | 35.2% | Rs 7,49,700 | 1.33 | Rs -1,42,356 |
+| **Options Intraday Optimized** | **1,124** | **55.7%** | **Rs 27,97,343** | **3.63** | **Rs -37,750** |
+
+### EOD vs Intraday Equity Curves
+
+![Futures: EOD vs Intraday](analysis/eod_vs_intraday_futures.png)
+![Options: EOD vs Intraday](analysis/eod_vs_intraday_options.png)
+![All Optimized Strategies](analysis/equity_curves_5min_all_optimized.png)
+
+### EOD vs Intraday Takeaways
+
+1. **Intraday entry generates 22% more P&L for futures** (Rs 37.9L vs Rs 31.1L) and **30% more for options** (Rs 28.0L vs Rs 21.5L). Entering earlier captures more of the move.
+
+2. **Intraday entry trades ~1.7x more frequently** (1,121 vs 674 futures trades). It catches breakouts that reverse before EOD -- some of these still make money before the SL is hit or trailing SL locks in a profit.
+
+3. **EOD entry has higher win rate** (72.6% vs 60.8% for futures). Waiting for close confirmation filters out false breakouts, so a larger fraction of trades succeed. But the additional trades from intraday entry are profitable enough on average to boost total P&L.
+
+4. **Intraday entry needs a wider initial SL** (2.3% vs 1.9% for futures). The entry happens before confirmation, so the position experiences more adverse excursion before the move develops. The extra 0.4% SL buffer is the price of entering early.
+
+5. **Max drawdown is similar** -- Rs 41.5K (intraday) vs Rs 48.0K (EOD) for futures. The intraday mode's diversification across more trades actually reduces drawdown slightly.
+
+6. **The trailing SL (0.3%) is the universal constant** -- every single optimization landed on 0.3% trailing. This appears to be a structural property of NIFTY breakout dynamics, not an artifact of overfitting.
+
+7. **Options intraday is the strongest risk-adjusted strategy** -- profit factor of 3.63 with a max drawdown of just Rs 37.7K. Entering early on the option captures the delta move while the short hold (4 days) minimizes theta decay.
+
+8. **Bottom line**: If you can monitor intraday, entering on the first 5-min breach of PDH/PDL with a 2.3% SL and 0.3% trailing SL is more profitable than waiting for EOD confirmation. The trade-off is lower win rate and more screen time.

@@ -1,0 +1,32 @@
+{
+  "futures_eod": {
+    "sl_pct": 1.9000000000000001,
+    "use_trailing": true,
+    "trailing_sl_pct": 0.3,
+    "max_hold_days": 19,
+    "use_target": false
+  },
+  "options_eod": {
+    "sl_pct": 1.9000000000000001,
+    "use_trailing": true,
+    "trailing_sl_pct": 0.3,
+    "max_hold_days": 7,
+    "use_target": false,
+    "target_delta": 0.75
+  },
+  "futures_intraday": {
+    "sl_pct": 2.3,
+    "use_trailing": true,
+    "trailing_sl_pct": 0.3,
+    "max_hold_days": 19,
+    "use_target": false
+  },
+  "options_intraday": {
+    "sl_pct": 2.4,
+    "use_trailing": true,
+    "trailing_sl_pct": 0.3,
+    "max_hold_days": 4,
+    "use_target": false,
+    "target_delta": 0.75
+  }
+}
