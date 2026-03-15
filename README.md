@@ -24,6 +24,7 @@ Analysis of NIFTY 50 intraday price movement, overnight gaps, and their correlat
   - [Breakout Velocity and Magnitude](#breakout-velocity-and-magnitude)
   - [Does Breakout Size Predict Continuation?](#does-breakout-size-predict-continuation)
   - [Recovery After Bearish Breakdowns](#recovery-after-bearish-breakdowns)
+  - [VIX and Breakout Dynamics](#vix-and-breakout-dynamics)
 - [Continuation Summary](#continuation-summary)
 
 ---
@@ -289,6 +290,59 @@ Recovery time distribution:
 
 **Charts**: `analysis/bearish_recovery.png`, `analysis/recovery_by_streak.png`
 
+### VIX and Breakout Dynamics
+
+How does India VIX relate to breakouts/breakdowns on the same day and in the following days?
+
+**VIX levels by day type:**
+
+| Day Type | Mean VIX | Median VIX | N |
+|----------|----------|------------|---|
+| Normal (no breakout) | 19.90 | 17.13 | 1,838 |
+| Bullish Breakout | 19.01 | 16.49 | 1,403 |
+| Bearish Breakdown | 20.71 | 17.75 | 1,160 |
+
+Bearish breakdowns happen on slightly higher-VIX days and bullish breakouts on slightly lower-VIX days, as expected.
+
+**Does VIX predict which breakouts continue vs reverse?**
+
+| Type | Continued (VIX mean) | Reversed (VIX mean) | T-test p |
+|------|---------------------|--------------------|----|
+| Bullish | 18.78 | 19.32 | 0.24 (not significant) |
+| Bearish | 20.14 | 21.30 | 0.04 (significant) |
+
+For bullish breakouts, VIX doesn't distinguish continuations from reversals. For bearish breakdowns, the ones that *reverse* (mean-revert) actually have slightly *higher* VIX -- counter-intuitive, but likely reflects that extreme fear (high VIX) overshoots and snaps back.
+
+**VIX trajectory after breakouts (mean change from breakout day):**
+
+| Days After | Bullish VIX Change | Bearish VIX Change |
+|-----------|-------------------|-------------------|
+| Day 1 | +0.09 | -0.07 |
+| Day 2 | +0.18 | -0.05 |
+| Day 3 | +0.19 | -0.02 |
+| Day 5 | +0.25 | -0.07 |
+| Day 10 | +0.23 | -0.09 |
+
+After bullish breakouts, VIX drifts slightly *up* (more uncertainty about whether the rally continues). After bearish breakdowns, VIX drifts *down* (fear subsides as the market recovers). Both effects are small (<0.5 VIX points).
+
+**VIX correlations with breakout metrics (Spearman):**
+
+| Pair | Bullish | Bearish |
+|------|---------|---------|
+| VIX vs Streak | -0.037 | -0.062 |
+| VIX vs Peak Excursion | 0.139 | 0.154 |
+| VIX vs Velocity | 0.345 | 0.302 |
+| VIX vs Breakout Magnitude | 0.327 | 0.409 |
+| VIX vs Recovery Time (bearish) | -- | -0.060 |
+
+**Key findings**:
+- **VIX does not predict streak length** (r ~ -0.04 to -0.06). High VIX doesn't mean a breakout will continue longer.
+- **VIX strongly predicts velocity** (r=0.35 bull, 0.30 bear). In high-VIX environments, breakout moves are *faster* -- bigger % per day -- but not necessarily longer.
+- **VIX predicts breakout magnitude** (r=0.33 bull, 0.41 bear). High-VIX breakouts punch harder through the prev high/low.
+- **VIX does not predict bearish recovery time** (r=-0.06). A breakdown during high VIX recovers just as fast as during low VIX.
+
+**Chart**: `analysis/vix_breakout_analysis.png`
+
 ---
 
 ## Continuation Summary
@@ -310,3 +364,5 @@ Recovery time distribution:
 8. **Bearish breakdowns recover fast**: Median recovery is just 2 days. 48% recover the next day, 75% within 5 days. Only 2% fail to recover within a year (major crashes). The breakdown magnitude doesn't predict recovery time -- what matters is whether the streak continues.
 
 9. **Longer bearish streaks are harder to recover from**: Streak-0 recovers in 1 day. Streak-4+ takes 14-22 days median with up to 13% non-recovery risk within a year.
+
+10. **VIX predicts breakout velocity and magnitude, but not duration**: High-VIX breakouts punch harder and move faster (%/day), but don't last longer. VIX also doesn't predict bearish recovery time. VIX tells you *how violent* the move will be, not *how long* it will last.

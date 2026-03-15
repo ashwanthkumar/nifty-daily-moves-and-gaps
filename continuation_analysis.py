@@ -22,9 +22,11 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 def load_data():
     nifty = pd.read_csv("data/nifty50.csv", index_col=0, parse_dates=True)
+    vix = pd.read_csv("data/indiavix.csv", index_col=0, parse_dates=True)
     nifty["Prev_High"] = nifty["High"].shift(1)
     nifty["Prev_Low"] = nifty["Low"].shift(1)
     nifty["Prev_Close"] = nifty["Close"].shift(1)
+    nifty["VIX"] = vix["Close"].reindex(nifty.index)
     nifty = nifty.dropna()
     return nifty
 
@@ -128,6 +130,15 @@ def measure_continuation(df, breakout_col, direction):
             else:
                 fwd_returns[f"Fwd_{n}d_Ret"] = np.nan
 
+        # --- VIX on breakout day and forward ---
+        vix_day0 = df.iloc[loc]["VIX"]
+        vix_fwd = {}
+        for n in [1, 2, 3, 5, 10]:
+            if loc + n < len(df):
+                vix_fwd[f"VIX_Day{n}"] = df.iloc[loc + n]["VIX"]
+            else:
+                vix_fwd[f"VIX_Day{n}"] = np.nan
+
         results.append({
             "Date": day,
             "Close": base_close,
@@ -137,6 +148,8 @@ def measure_continuation(df, breakout_col, direction):
             "Peak_Excursion_Pct": peak_excursion_pct,
             "Days_To_Peak": days_to_peak,
             "Velocity_Pct_Per_Day": velocity,
+            "VIX": vix_day0,
+            **vix_fwd,
             **fwd_returns,
         })
 
@@ -708,9 +721,240 @@ def plot_recovery_by_streak(bear_df):
 def save_recovery_csv(bear_df):
     """Save recovery data to CSV."""
     cols = ["Date", "Close", "Streak", "Breakout_Magnitude_Pct", "Peak_Excursion_Pct",
-            "Days_To_Peak", "Velocity_Pct_Per_Day", "Days_To_Recovery", "Max_Adverse_Pct"]
+            "Days_To_Peak", "Velocity_Pct_Per_Day", "Days_To_Recovery", "Max_Adverse_Pct",
+            "VIX"]
     bear_df[cols].to_csv(OUTPUT_DIR / "bearish_recovery_data.csv", index=False)
     print("Saved bearish_recovery_data.csv")
+
+
+# ─────────────────────────────────────────────────────────────
+# VIX and Breakout/Breakdown Analysis
+# ─────────────────────────────────────────────────────────────
+
+def vix_breakout_analysis(df, bull_df, bear_df):
+    """Analyze the relationship between VIX and breakout/breakdown behaviour."""
+    from scipy import stats as sp_stats
+
+    # --- 1. VIX levels on breakout days vs normal days ---
+    normal_mask = ~df["Bullish_Breakout"] & ~df["Bearish_Breakout"]
+    vix_normal = df.loc[normal_mask, "VIX"]
+    vix_bull = bull_df["VIX"]
+    vix_bear = bear_df["VIX"]
+
+    print(f"\n{'='*70}")
+    print("  VIX LEVELS BY DAY TYPE")
+    print(f"{'='*70}")
+    print(f"  {'Day Type':<30} {'Mean':>8} {'Median':>8} {'N':>6}")
+    print("  " + "-" * 52)
+    print(f"  {'Normal (no breakout)':<30} {vix_normal.mean():>8.2f} {vix_normal.median():>8.2f} {len(vix_normal):>6}")
+    print(f"  {'Bullish Breakout':<30} {vix_bull.mean():>8.2f} {vix_bull.median():>8.2f} {len(vix_bull):>6}")
+    print(f"  {'Bearish Breakdown':<30} {vix_bear.mean():>8.2f} {vix_bear.median():>8.2f} {len(vix_bear):>6}")
+
+    # --- 2. Does VIX predict continuation vs reversal? ---
+    print(f"\n{'='*70}")
+    print("  DOES VIX PREDICT CONTINUATION?")
+    print(f"{'='*70}")
+
+    for label, cont_df, direction in [
+        ("Bullish", bull_df, "bull"),
+        ("Bearish", bear_df, "bear"),
+    ]:
+        continued = cont_df[cont_df["Streak"] >= 1]
+        reversed_ = cont_df[cont_df["Streak"] == 0]
+        print(f"\n  {label} Breakouts:")
+        print(f"    Continued (streak>=1): VIX mean={continued['VIX'].mean():.2f}, "
+              f"median={continued['VIX'].median():.2f}, n={len(continued)}")
+        print(f"    Reversed  (streak=0):  VIX mean={reversed_['VIX'].mean():.2f}, "
+              f"median={reversed_['VIX'].median():.2f}, n={len(reversed_)}")
+
+        # T-test
+        t_stat, p_val = sp_stats.ttest_ind(continued["VIX"], reversed_["VIX"])
+        print(f"    T-test: t={t_stat:.3f}, p={p_val:.4f} "
+              f"{'(significant)' if p_val < 0.05 else '(not significant)'}")
+
+    # --- 3. VIX change in the days after breakout ---
+    print(f"\n{'='*70}")
+    print("  VIX TRAJECTORY AFTER BREAKOUTS")
+    print(f"{'='*70}")
+
+    for label, cont_df, direction in [
+        ("Bullish", bull_df, "bull"),
+        ("Bearish", bear_df, "bear"),
+    ]:
+        print(f"\n  {label} — Mean VIX change from breakout day:")
+        for n in [1, 2, 3, 5, 10]:
+            col = f"VIX_Day{n}"
+            vix_change = cont_df[col] - cont_df["VIX"]
+            valid = vix_change.dropna()
+            print(f"    Day {n:>2}: {valid.mean():+.2f} (median {valid.median():+.2f}), n={len(valid)}")
+
+    # --- 4. Correlations: VIX vs streak, peak excursion, velocity ---
+    print(f"\n{'='*70}")
+    print("  VIX CORRELATIONS WITH BREAKOUT METRICS")
+    print(f"{'='*70}")
+    print(f"  {'Pair':<45} {'Bullish r':>10} {'Bearish r':>10}")
+    print("  " + "-" * 65)
+
+    metrics = [
+        ("VIX vs Streak", "VIX", "Streak"),
+        ("VIX vs Peak Excursion", "VIX", "Peak_Excursion_Pct"),
+        ("VIX vs Velocity", "VIX", "Velocity_Pct_Per_Day"),
+        ("VIX vs Breakout Magnitude", "VIX", "Breakout_Magnitude_Pct"),
+    ]
+
+    corr_results = []
+    for label, col_a, col_b in metrics:
+        r_bull = sp_stats.spearmanr(bull_df[col_a], bull_df[col_b])[0]
+        r_bear = sp_stats.spearmanr(bear_df[col_a], bear_df[col_b])[0]
+        print(f"  {label:<45} {r_bull:>10.3f} {r_bear:>10.3f}")
+        corr_results.append({"Pair": label, "Bullish_Spearman": round(r_bull, 3),
+                             "Bearish_Spearman": round(r_bear, 3)})
+
+    # VIX vs recovery time for bearish
+    if "Days_To_Recovery" in bear_df.columns:
+        recovered = bear_df.dropna(subset=["Days_To_Recovery"])
+        r_rec = sp_stats.spearmanr(recovered["VIX"], recovered["Days_To_Recovery"])[0]
+        print(f"  {'VIX vs Recovery Time (bearish)':<45} {'--':>10} {r_rec:>10.3f}")
+        corr_results.append({"Pair": "VIX vs Recovery Time (bearish)", "Bullish_Spearman": None,
+                             "Bearish_Spearman": round(r_rec, 3)})
+
+    pd.DataFrame(corr_results).to_csv(OUTPUT_DIR / "vix_breakout_correlations.csv", index=False)
+    return vix_normal, vix_bull, vix_bear
+
+
+def plot_vix_breakout(df, bull_df, bear_df, vix_normal, vix_bull, vix_bear):
+    """Plot VIX relationships with breakouts."""
+    from scipy import stats as sp_stats
+
+    fig, axes = plt.subplots(2, 3, figsize=(20, 12))
+
+    # --- 1. VIX distribution by day type ---
+    ax = axes[0, 0]
+    bins = np.linspace(5, 60, 50)
+    ax.hist(vix_normal, bins=bins, alpha=0.5, density=True, color="gray", label="Normal")
+    ax.hist(vix_bull, bins=bins, alpha=0.5, density=True, color="forestgreen", label="Bullish Breakout")
+    ax.hist(vix_bear, bins=bins, alpha=0.5, density=True, color="crimson", label="Bearish Breakdown")
+    ax.set_xlabel("India VIX")
+    ax.set_ylabel("Density")
+    ax.set_title("VIX Distribution by Day Type")
+    ax.legend(fontsize=8)
+
+    # --- 2. VIX on breakout day: continued vs reversed ---
+    ax = axes[0, 1]
+    bull_cont = bull_df[bull_df["Streak"] >= 1]["VIX"]
+    bull_rev = bull_df[bull_df["Streak"] == 0]["VIX"]
+    bear_cont = bear_df[bear_df["Streak"] >= 1]["VIX"]
+    bear_rev = bear_df[bear_df["Streak"] == 0]["VIX"]
+
+    positions = [1, 2, 4, 5]
+    bp = ax.boxplot([bull_cont, bull_rev, bear_cont, bear_rev],
+                    positions=positions, widths=0.6, patch_artist=True,
+                    showfliers=False)
+    colors = ["forestgreen", "lightgreen", "crimson", "lightcoral"]
+    for patch, color in zip(bp["boxes"], colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+    ax.set_xticks(positions)
+    ax.set_xticklabels(["Bull\nCont.", "Bull\nRev.", "Bear\nCont.", "Bear\nRev."], fontsize=9)
+    ax.set_ylabel("VIX")
+    ax.set_title("VIX: Continuation vs Reversal")
+
+    # --- 3. VIX trajectory after breakouts (mean VIX change) ---
+    ax = axes[0, 2]
+    days_fwd = [0, 1, 2, 3, 5, 10]
+    for cont_df, label, color in [
+        (bull_df, "Bullish", "forestgreen"),
+        (bear_df, "Bearish", "crimson"),
+    ]:
+        vix_means = [0]  # day 0 = 0 change
+        for n in [1, 2, 3, 5, 10]:
+            vix_change = (cont_df[f"VIX_Day{n}"] - cont_df["VIX"]).dropna()
+            vix_means.append(vix_change.mean())
+        ax.plot(days_fwd, vix_means, "o-", color=color, linewidth=2, markersize=6, label=label)
+    ax.axhline(0, color="gray", linestyle="--", linewidth=0.5)
+    ax.set_xlabel("Days After Breakout")
+    ax.set_ylabel("Mean VIX Change")
+    ax.set_title("VIX Trajectory After Breakouts")
+    ax.legend()
+    ax.set_xticks(days_fwd)
+
+    # --- 4. VIX quintiles vs continuation rate ---
+    ax = axes[1, 0]
+    for cont_df, label, color in [
+        (bull_df, "Bullish", "forestgreen"),
+        (bear_df, "Bearish", "crimson"),
+    ]:
+        cont_df_copy = cont_df.copy()
+        cont_df_copy["VIX_Q"] = pd.qcut(cont_df_copy["VIX"], q=5, duplicates="drop")
+        grouped = cont_df_copy.groupby("VIX_Q", observed=True).agg(
+            cont_rate=("Streak", lambda x: (x >= 1).mean() * 100),
+            count=("Streak", "count"),
+        ).reset_index()
+        x = range(len(grouped))
+        ax.plot(list(x), grouped["cont_rate"].values, "o-", color=color, linewidth=2, markersize=6,
+                label=f"{label} (n per bin ~{grouped['count'].mean():.0f})")
+    ax.set_xlabel("VIX Quintile (low → high)")
+    ax.set_ylabel("% That Continue (streak >= 1)")
+    ax.set_title("Continuation Rate by VIX Level")
+    ax.legend(fontsize=8)
+    ax.axhline(50, color="gray", linestyle="--", linewidth=0.5)
+
+    # --- 5. VIX vs peak excursion scatter ---
+    ax = axes[1, 1]
+    ax.scatter(bull_df["VIX"], bull_df["Peak_Excursion_Pct"],
+               alpha=0.15, s=8, color="forestgreen", label="Bullish")
+    ax.scatter(bear_df["VIX"], bear_df["Peak_Excursion_Pct"],
+               alpha=0.15, s=8, color="crimson", label="Bearish")
+    # Regression lines
+    for cont_df, color in [(bull_df, "forestgreen"), (bear_df, "crimson")]:
+        slope, intercept, r, p, se = sp_stats.linregress(cont_df["VIX"], cont_df["Peak_Excursion_Pct"])
+        x_line = np.linspace(cont_df["VIX"].min(), cont_df["VIX"].quantile(0.95), 100)
+        ax.plot(x_line, slope * x_line + intercept, color=color, linewidth=1.5,
+                linestyle="--", alpha=0.8)
+    ax.set_xlabel("VIX on Breakout Day")
+    ax.set_ylabel("Peak Excursion %")
+    ax.set_title("VIX vs Peak Excursion")
+    ax.set_ylim(0, bull_df["Peak_Excursion_Pct"].quantile(0.90))
+    ax.legend(fontsize=8)
+
+    # --- 6. VIX vs recovery time (bearish only) ---
+    ax = axes[1, 2]
+    if "Days_To_Recovery" in bear_df.columns:
+        recovered = bear_df.dropna(subset=["Days_To_Recovery"])
+        # Bin VIX into quintiles and show mean/median recovery
+        rec_copy = recovered.copy()
+        rec_copy["VIX_Q"] = pd.qcut(rec_copy["VIX"], q=5, duplicates="drop")
+        grouped = rec_copy.groupby("VIX_Q", observed=True).agg(
+            mean_rec=("Days_To_Recovery", "mean"),
+            median_rec=("Days_To_Recovery", "median"),
+            count=("Days_To_Recovery", "count"),
+            not_rec_overall=("Days_To_Recovery", "count"),  # placeholder
+        ).reset_index()
+
+        # Also compute non-recovery rate per VIX quintile from full bear_df
+        bear_copy = bear_df.copy()
+        bear_copy["VIX_Q"] = pd.qcut(bear_copy["VIX"], q=5, duplicates="drop")
+        nr_rates = bear_copy.groupby("VIX_Q", observed=True).apply(
+            lambda g: g["Days_To_Recovery"].isna().mean() * 100,
+        ).values
+
+        x = np.arange(len(grouped))
+        ax.bar(x - 0.15, grouped["mean_rec"], width=0.3, color="crimson", alpha=0.7, label="Mean")
+        ax.bar(x + 0.15, grouped["median_rec"], width=0.3, color="crimson", alpha=0.4, label="Median")
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"Q{i+1}" for i in range(len(grouped))], fontsize=9)
+        ax.set_xlabel("VIX Quintile (Q1=low, Q5=high)")
+        ax.set_ylabel("Days to Recovery")
+        ax.set_title("Bearish Recovery Time by VIX Level")
+        ax.legend(fontsize=8)
+
+        for i, (m, c, nr) in enumerate(zip(grouped["mean_rec"], grouped["count"], nr_rates)):
+            ax.text(i, m + 1, f"n={c}\n{nr:.0f}% nr", ha="center", fontsize=7)
+
+    plt.suptitle("NIFTY 50 — India VIX and Breakout/Breakdown Dynamics", fontsize=14)
+    plt.tight_layout()
+    fig.savefig(OUTPUT_DIR / "vix_breakout_analysis.png", dpi=150)
+    print("Saved vix_breakout_analysis.png")
 
 
 def save_summary(bull_df, bear_df):
@@ -779,6 +1023,10 @@ def main():
     plot_recovery_distribution(bear_df)
     plot_recovery_by_streak(bear_df)
     save_recovery_csv(bear_df)
+
+    # VIX and breakout analysis
+    vix_normal, vix_bull, vix_bear = vix_breakout_analysis(df, bull_df, bear_df)
+    plot_vix_breakout(df, bull_df, bear_df, vix_normal, vix_bull, vix_bear)
 
     save_summary(bull_df, bear_df)
 
