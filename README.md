@@ -48,7 +48,9 @@ Three classical correlation measures applied to all variable pairs:
 
 The Intraday-vs-Abs-Gap pair is notable: Pearson shows 0.168 but Spearman drops to -0.007 -- the linear correlation is driven by a few extreme outlier days (crisis periods) where both spiked together.
 
-**Charts**: `analysis/heatmap_pearson.png`, `analysis/heatmap_spearman.png`, `analysis/heatmap_kendall.png`
+![Pearson Correlation Heatmap](analysis/heatmap_pearson.png)
+![Spearman Correlation Heatmap](analysis/heatmap_spearman.png)
+![Kendall Correlation Heatmap](analysis/heatmap_kendall.png)
 
 ---
 
@@ -64,7 +66,7 @@ Time-varying correlations to see if relationships are stable or regime-dependent
 
 **Key finding**: The Intraday-VIX relationship is the only stable one. The 60-day window reveals short-term regime shifts where even this relationship temporarily weakens (e.g., post-COVID normalization).
 
-**Chart**: `analysis/rolling_correlations.png`
+![Rolling Correlations](analysis/rolling_correlations.png)
 
 ---
 
@@ -81,7 +83,7 @@ Tests whether one variable *leads* another.
 
 **Key finding**: VIX and intraday movement are most correlated at lag +/-1 (r=0.71, slightly higher than lag-0 r=0.707). Yesterday's VIX is a marginally better predictor of today's intraday movement than today's VIX itself. The relationship is symmetric -- high intraday movement also predicts tomorrow's VIX staying elevated.
 
-**Chart**: `analysis/lagged_correlations.png`
+![Lagged Cross-Correlations](analysis/lagged_correlations.png)
 
 ---
 
@@ -99,7 +101,7 @@ Captures *any* statistical dependency, not just linear/monotonic. Values normali
 
 **Key finding**: The VIX-Intraday MI (0.159) confirms significant non-linear dependency beyond what Pearson captures. Intraday vs Abs Gap MI is very low (0.021), meaning there's genuinely no relationship, not just a non-linear one hiding from Pearson.
 
-**Chart**: `analysis/mutual_information.png`
+![Mutual Information](analysis/mutual_information.png)
 
 ---
 
@@ -122,7 +124,7 @@ Median intraday movement by VIX bucket:
 - VIX 20-30: ~2.6%
 - VIX > 30: ~4.2%
 
-**Chart**: `analysis/regime_boxplots.png`
+![Regime Boxplots](analysis/regime_boxplots.png)
 
 ---
 
@@ -134,7 +136,7 @@ Median intraday movement by VIX bucket:
 | VIX vs Abs Gap % | 0.132 | 0.007 | Weak: VIX barely predicts gap size |
 | Abs Gap vs Intraday % | 0.168 | 0.563 | Weak but positive -- large gaps tend to come with volatile days |
 
-**Chart**: `analysis/scatter_regression.png`
+![Scatter Regression](analysis/scatter_regression.png)
 
 ---
 
@@ -179,7 +181,7 @@ How many consecutive days does the move continue (each day closing higher/lower 
 
 Roughly half of all breakouts reverse the very next day. Bullish breakouts have a slight continuation edge over bearish ones (57.3% vs 51.7% next-day win rate), and longer max streaks (12 vs 7 days).
 
-**Chart**: `analysis/continuation_streaks.png`
+![Continuation Streaks](analysis/continuation_streaks.png)
 
 ### Forward Returns After Breakouts
 
@@ -207,7 +209,8 @@ Average returns over fixed forward periods following a breakout day:
 | 10 days | +0.403% | +0.510% | 43.8% |
 | 20 days | +0.608% | +0.985% | 39.4% |
 
-**Charts**: `analysis/continuation_forward_returns.png`, `analysis/continuation_win_rates.png`
+![Forward Returns After Breakouts](analysis/continuation_forward_returns.png)
+![Continuation Win Rates](analysis/continuation_win_rates.png)
 
 ### Continuation Return by Streak Length
 
@@ -216,7 +219,7 @@ When a breakout does continue, how much return does each additional streak day a
 - Bullish: each additional day of streak adds roughly +0.5-0.7% cumulative return
 - Bearish: each additional day adds roughly -1.0% cumulative return (but sample sizes get small beyond 5 days)
 
-**Chart**: `analysis/continuation_streak_vs_return.png`
+![Continuation Return by Streak](analysis/continuation_streak_vs_return.png)
 
 ### Breakout Velocity and Magnitude
 
@@ -238,7 +241,8 @@ How far does the move go before consolidation/mean reversion, and how fast?
 
 The velocity by streak chart shows this clearly: as streaks extend, bullish peak excursion grows steadily while velocity stays flat (~0.3-0.5%/day). Bearish streaks maintain higher velocity (~1.0-1.5%/day) but cap out at 7 days.
 
-**Charts**: `analysis/velocity_distributions.png`, `analysis/velocity_by_streak.png`
+![Velocity Distributions](analysis/velocity_distributions.png)
+![Velocity by Streak](analysis/velocity_by_streak.png)
 
 ### Does Breakout Size Predict Continuation?
 
@@ -251,7 +255,7 @@ Breakout magnitude (how far beyond the prev high/low) is binned into quintiles t
 
 **Key finding**: Initial breakout size is a *weak* predictor of how far the move goes (r~0.17 for both). Larger breakouts do tend to have slightly larger peak excursions, but the relationship is noisy. Breakout size does not meaningfully predict streak duration -- a small breakout can run for days, and a large one can reverse immediately.
 
-**Chart**: `analysis/magnitude_vs_continuation.png`
+![Magnitude vs Continuation](analysis/magnitude_vs_continuation.png)
 
 ### Recovery After Bearish Breakdowns
 
@@ -288,7 +292,8 @@ Recovery time distribution:
 
 **Max adverse move**: Before recovering, the median further drop is only 0.81%. Even in breakdowns, the typical "pain" beyond the breakdown day is less than 1%.
 
-**Charts**: `analysis/bearish_recovery.png`, `analysis/recovery_by_streak.png`
+![Bearish Recovery](analysis/bearish_recovery.png)
+![Recovery by Streak](analysis/recovery_by_streak.png)
 
 ### VIX and Breakout Dynamics
 
@@ -341,7 +346,7 @@ After bullish breakouts, VIX drifts slightly *up* (more uncertainty about whethe
 - **VIX predicts breakout magnitude** (r=0.33 bull, 0.41 bear). High-VIX breakouts punch harder through the prev high/low.
 - **VIX does not predict bearish recovery time** (r=-0.06). A breakdown during high VIX recovers just as fast as during low VIX.
 
-**Chart**: `analysis/vix_breakout_analysis.png`
+![VIX Breakout Analysis](analysis/vix_breakout_analysis.png)
 
 ---
 
