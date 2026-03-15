@@ -26,6 +26,13 @@ Analysis of NIFTY 50 intraday price movement, overnight gaps, and their correlat
   - [Recovery After Bearish Breakdowns](#recovery-after-bearish-breakdowns)
   - [VIX and Breakout Dynamics](#vix-and-breakout-dynamics)
 - [Continuation Summary](#continuation-summary)
+- [Breakout Strategy Backtest](#breakout-strategy-backtest)
+  - [Strategy Design](#strategy-design)
+  - [Baseline Results](#baseline-results)
+  - [Optuna-Optimized Parameters](#optuna-optimized-parameters)
+  - [Optimized Results](#optimized-results)
+  - [Equity Curves](#equity-curves)
+  - [Backtest Takeaways](#backtest-takeaways)
 
 ---
 
@@ -371,3 +378,100 @@ After bullish breakouts, VIX drifts slightly *up* (more uncertainty about whethe
 9. **Longer bearish streaks are harder to recover from**: Streak-0 recovers in 1 day. Streak-4+ takes 14-22 days median with up to 13% non-recovery risk within a year.
 
 10. **VIX predicts breakout velocity and magnitude, but not duration**: High-VIX breakouts punch harder and move faster (%/day), but don't last longer. VIX also doesn't predict bearish recovery time. VIX tells you *how violent* the move will be, not *how long* it will last.
+
+---
+
+## Breakout Strategy Backtest
+
+Can the breakout/breakdown signals be traded profitably? Backtested two approaches over ~4,500 trading days (2007-2026), 1 lot per trade:
+
+1. **Futures**: Go long on bullish breakout close, short on bearish breakdown close
+2. **Options**: Buy ITM call (~0.6 delta) on bullish breakout, ITM put on bearish breakdown (Black-Scholes pricing using India VIX as IV, weekly expiry assumption)
+
+NIFTY lot sizes changed over time: 50 (2007-2015), 75 (2015-2024), 25 (2024+).
+
+### Strategy Design
+
+- **Entry**: At the close on the breakout/breakdown day
+- **Stop loss**: Fixed % from entry price, checked intraday against lows (long) / highs (short)
+- **Trailing SL**: Once price makes a new high/low, ratchet SL to trail by a % from the peak/trough
+- **Time exit**: Close at end of max holding period if neither SL nor target hit
+- **No re-entry**: After exit, skip to the next trading day before looking for new signals
+
+For options, SL/exit triggers are based on the underlying NIFTY price. Option P&L is computed by repricing via Black-Scholes at exit (accounting for time decay).
+
+### Baseline Results
+
+Baseline parameters: SL=1%, no trailing SL, max hold 5 days, no profit target.
+
+| Strategy | Trades | Win Rate | Total P&L | Profit Factor | Max Drawdown |
+|----------|--------|----------|-----------|---------------|--------------|
+| Futures | 859 | 37.3% | Rs 13,97,971 | 1.44 | Rs -1,28,389 |
+| Options (0.6 delta) | 859 | 32.7% | Rs 7,41,576 | 1.31 | Rs -1,16,687 |
+
+The baseline is profitable but has low win rate -- the tight 1% SL gets clipped by intraday noise frequently, but the winners run enough to overcome.
+
+### Optuna-Optimized Parameters
+
+Used [Optuna](https://optuna.org/) (300 trials) to optimize SL, trailing SL, holding period, profit target, and option delta. Objective: maximize Calmar ratio (P&L / max drawdown) weighted by square root of win rate.
+
+| Parameter | Futures | Options |
+|-----------|---------|---------|
+| Stop Loss % | 2.0% | 2.1% |
+| Trailing SL | Yes (0.3%) | Yes (0.3%) |
+| Max Hold Days | 20 | 7 |
+| Profit Target | None | None |
+| Option Delta | -- | 0.75 |
+
+Key insights from optimization:
+- **Wider initial SL** (2% vs 1%) avoids getting stopped out by noise
+- **Tight trailing SL** (0.3%) locks in profits once the move is underway
+- **No profit target** -- let the trailing SL do the work
+- **Longer hold for futures** (20 days) vs shorter for options (7 days) -- theta decay makes long holds expensive for options
+- **Higher delta** (0.75 vs 0.6) for options -- deeper ITM reduces theta drag
+
+![Optuna Futures](analysis/optuna_futures.png)
+![Optuna Options](analysis/optuna_options.png)
+
+### Optimized Results
+
+| Strategy | Trades | Win Rate | Total P&L | Profit Factor | Max Drawdown |
+|----------|--------|----------|-----------|---------------|--------------|
+| Futures Baseline | 859 | 37.3% | Rs 13,97,971 | 1.44 | Rs -1,28,389 |
+| **Futures Optimized** | **1,099** | **72.0%** | **Rs 34,94,781** | **3.31** | **Rs -52,396** |
+| Options Baseline | 859 | 32.7% | Rs 7,41,576 | 1.31 | Rs -1,16,687 |
+| **Options Optimized** | **1,095** | **63.7%** | **Rs 25,39,672** | **3.06** | **Rs -40,958** |
+
+Optimization improved every metric:
+- **Win rate**: 37% -> 72% (futures), 33% -> 64% (options)
+- **P&L**: 2.5x improvement for both strategies
+- **Max drawdown**: Reduced by 60% (futures) and 65% (options)
+- **Profit factor**: 1.44 -> 3.31 (futures), 1.31 -> 3.06 (options)
+
+**By direction (optimized futures):**
+
+| Direction | Trades | Total P&L | Avg P&L |
+|-----------|--------|-----------|---------|
+| Long | 594 | Rs 20,26,434 | Rs 3,412 |
+| Short | 505 | Rs 14,68,346 | Rs 2,908 |
+
+Both sides are profitable. Longs have a slight edge due to NIFTY's structural upward drift.
+
+### Equity Curves
+
+![Equity Curves Baseline](analysis/equity_curves_(Baseline).png)
+![Equity Curves Optimized](analysis/equity_curves_(Optimized).png)
+
+### Backtest Takeaways
+
+1. **Breakout trading works on NIFTY** -- both futures and options strategies are profitable over 17 years of data, even with naive baseline parameters.
+
+2. **The optimal approach is wide SL + tight trailing SL** -- give the trade room to breathe initially (2% SL), then lock in profits aggressively (0.3% trailing). This is the single most impactful finding from the optimization.
+
+3. **No profit target outperforms fixed targets** -- letting winners run with a trailing SL captures more of the tail than capping at a fixed %. This aligns with the continuation analysis showing that the few 4+ day streaks deliver outsized returns.
+
+4. **Options underperform futures** -- theta decay erodes ~27% of the P&L. The optimized delta moved to 0.75 (deeper ITM) to minimize this, and hold period shortened to 7 days. For this strategy, futures are the better instrument.
+
+5. **Both long and short sides work** -- despite NIFTY's bull bias, shorting breakdowns is profitable. The wide SL + trailing SL catches the fast, violent bearish moves identified in the continuation analysis.
+
+6. **Caveat: overfitting risk** -- Optuna optimized over the full dataset. Walk-forward or out-of-sample testing would be needed to validate these parameters for live trading. The 300-trial optimization with 5 parameters is relatively conservative, but the dramatic improvement (2.5x P&L) warrants skepticism.
