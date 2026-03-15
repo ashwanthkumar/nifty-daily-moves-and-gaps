@@ -21,6 +21,8 @@ Analysis of NIFTY 50 intraday price movement, overnight gaps, and their correlat
   - [Continuation Streaks](#continuation-streaks)
   - [Forward Returns After Breakouts](#forward-returns-after-breakouts)
   - [Continuation Return by Streak Length](#continuation-return-by-streak-length)
+  - [Breakout Velocity and Magnitude](#breakout-velocity-and-magnitude)
+  - [Does Breakout Size Predict Continuation?](#does-breakout-size-predict-continuation)
 - [Continuation Summary](#continuation-summary)
 
 ---
@@ -214,6 +216,41 @@ When a breakout does continue, how much return does each additional streak day a
 
 **Chart**: `analysis/continuation_streak_vs_return.png`
 
+### Breakout Velocity and Magnitude
+
+How far does the move go before consolidation/mean reversion, and how fast?
+
+- **Breakout day magnitude**: how far beyond the previous day's high/low the close lands
+- **Peak excursion**: the maximum favorable intraday move (using highs/lows) before 2 consecutive closes back past the breakout level
+- **Days to peak**: trading days from breakout to peak excursion
+- **Velocity**: peak excursion / days to peak (% per day)
+
+| Metric | Bullish (median) | Bearish (median) |
+|--------|-----------------|-----------------|
+| Breakout day magnitude | 0.480% | 0.544% |
+| Peak excursion | 1.364% | 1.306% |
+| Days to peak | 3.0 | 2.0 |
+| Velocity (% per day) | 0.311% | 0.460% |
+
+**Key finding**: Bearish breakouts are *faster* -- they reach their peak excursion in 2 days (median) vs 3 for bullish, with 48% higher velocity (0.46%/day vs 0.31%/day). But both reach a similar peak magnitude (~1.3%). Bears move faster and exhaust sooner; bulls grind slower but persist longer.
+
+The velocity by streak chart shows this clearly: as streaks extend, bullish peak excursion grows steadily while velocity stays flat (~0.3-0.5%/day). Bearish streaks maintain higher velocity (~1.0-1.5%/day) but cap out at 7 days.
+
+**Charts**: `analysis/velocity_distributions.png`, `analysis/velocity_by_streak.png`
+
+### Does Breakout Size Predict Continuation?
+
+Breakout magnitude (how far beyond the prev high/low) is binned into quintiles to test if larger initial breakouts lead to longer streaks or bigger peak excursions.
+
+| Observation | Bullish | Bearish |
+|-------------|---------|---------|
+| Magnitude vs Peak Excursion (r) | 0.173 | 0.177 |
+| Magnitude vs Streak Length | Slight positive trend across quintiles | Flat / no trend |
+
+**Key finding**: Initial breakout size is a *weak* predictor of how far the move goes (r~0.17 for both). Larger breakouts do tend to have slightly larger peak excursions, but the relationship is noisy. Breakout size does not meaningfully predict streak duration -- a small breakout can run for days, and a large one can reverse immediately.
+
+**Chart**: `analysis/magnitude_vs_continuation.png`
+
 ---
 
 ## Continuation Summary
@@ -227,3 +264,7 @@ When a breakout does continue, how much return does each additional streak day a
 4. **Streaks are short-lived**: Mean continuation is only 1.1-1.3 days. Most breakouts are noise, not the start of multi-day trends. The few that do extend (4+ days) deliver outsized returns but are rare (<11%).
 
 5. **Bearish moves are more violent but shorter**: Max bearish streak is 7 days vs 12 for bullish. Bear moves exhaust themselves faster.
+
+6. **Bearish breakouts are faster (higher velocity)**: 0.46%/day median velocity vs 0.31%/day for bullish. Bears reach peak excursion in 2 days (median) vs 3 for bulls. Same peak magnitude (~1.3%), but bears get there 50% faster.
+
+7. **Breakout size is a poor predictor**: Initial magnitude only weakly predicts peak excursion (r~0.17) and barely predicts streak length. You can't tell from the breakout day alone whether it will continue.

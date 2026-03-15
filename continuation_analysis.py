@@ -4,6 +4,9 @@ Breakout continuation analysis for NIFTY 50.
 When the market closes below the previous day's low (bearish breakout)
 or above the previous day's high (bullish breakout), does it continue
 in that direction? And if so, for how long?
+
+Also measures the velocity (magnitude / time) of breakout moves before
+consolidation or mean reversion.
 """
 
 import pandas as pd
@@ -35,13 +38,13 @@ def identify_breakouts(df):
 
 def measure_continuation(df, breakout_col, direction):
     """
-    For each breakout day, look forward and count how many consecutive days
-    continue in the breakout direction.
+    For each breakout day, look forward and measure:
+    1. Streak: consecutive days closing in the breakout direction
+    2. Peak excursion: max favorable move (using intraday high/low) before mean reversion
+    3. Velocity: peak excursion / days to reach peak
 
     For bullish: continuation = next day closes above current day's close
     For bearish: continuation = next day closes below current day's close
-
-    Also track cumulative return over the continuation streak.
     """
     breakout_days = df.index[df[breakout_col]]
     results = []
@@ -49,11 +52,12 @@ def measure_continuation(df, breakout_col, direction):
     for day in breakout_days:
         loc = df.index.get_loc(day)
         streak = 0
-        cum_return = 0.0
         base_close = df.iloc[loc]["Close"]
+        base_open = df.iloc[loc]["Open"]
         prev_close = base_close
 
-        for fwd in range(1, min(61, len(df) - loc)):  # look up to 60 days ahead
+        # --- Streak (close-to-close) ---
+        for fwd in range(1, min(61, len(df) - loc)):
             next_row = df.iloc[loc + fwd]
             if direction == "bull":
                 continues = next_row["Close"] > prev_close
@@ -66,7 +70,56 @@ def measure_continuation(df, breakout_col, direction):
             else:
                 break
 
-        # Also measure fixed forward returns regardless of streak
+        total_continuation_return = (prev_close - base_close) / base_close * 100
+
+        # --- Peak excursion (using intraday highs/lows) ---
+        # Look forward up to 60 days, track the most extreme favorable price
+        # before 2 consecutive closes back inside the breakout level
+        peak_price = base_close
+        peak_day_offset = 0
+        reversal_count = 0
+        look_ahead = min(61, len(df) - loc)
+
+        for fwd in range(1, look_ahead):
+            row = df.iloc[loc + fwd]
+            if direction == "bull":
+                # Track highest intraday high
+                if row["High"] > peak_price:
+                    peak_price = row["High"]
+                    peak_day_offset = fwd
+                    reversal_count = 0
+                # Mean reversion: close drops below breakout day's close
+                if row["Close"] < base_close:
+                    reversal_count += 1
+                else:
+                    reversal_count = 0
+            else:
+                # Track lowest intraday low
+                if row["Low"] < peak_price:
+                    peak_price = row["Low"]
+                    peak_day_offset = fwd
+                    reversal_count = 0
+                # Mean reversion: close rises above breakout day's close
+                if row["Close"] > base_close:
+                    reversal_count += 1
+                else:
+                    reversal_count = 0
+
+            # Stop after 2 consecutive reversals
+            if reversal_count >= 2:
+                break
+
+        peak_excursion_pct = abs(peak_price - base_close) / base_close * 100
+        days_to_peak = peak_day_offset
+        velocity = peak_excursion_pct / days_to_peak if days_to_peak > 0 else peak_excursion_pct
+
+        # --- Breakout magnitude on the breakout day itself ---
+        if direction == "bull":
+            breakout_magnitude = (base_close - df.iloc[loc]["Prev_High"]) / df.iloc[loc]["Prev_High"] * 100
+        else:
+            breakout_magnitude = (df.iloc[loc]["Prev_Low"] - base_close) / df.iloc[loc]["Prev_Low"] * 100
+
+        # --- Fixed forward returns ---
         fwd_returns = {}
         for n in [1, 2, 3, 5, 10, 20]:
             if loc + n < len(df):
@@ -75,13 +128,15 @@ def measure_continuation(df, breakout_col, direction):
             else:
                 fwd_returns[f"Fwd_{n}d_Ret"] = np.nan
 
-        total_continuation_return = (prev_close - base_close) / base_close * 100
-
         results.append({
             "Date": day,
             "Close": base_close,
             "Streak": streak,
             "Continuation_Return_Pct": total_continuation_return,
+            "Breakout_Magnitude_Pct": breakout_magnitude,
+            "Peak_Excursion_Pct": peak_excursion_pct,
+            "Days_To_Peak": days_to_peak,
+            "Velocity_Pct_Per_Day": velocity,
             **fwd_returns,
         })
 
@@ -111,6 +166,18 @@ def print_stats(label, cont_df, direction):
         count_11plus = cont_df[cont_df["Streak"] >= 11].shape[0]
         pct = count_11plus / len(cont_df) * 100
         print(f"   11+ days: {count_11plus:4d} ({pct:5.1f}%)")
+
+    # Velocity / magnitude stats
+    print()
+    print("  Breakout Magnitude & Velocity:")
+    print(f"    Breakout day magnitude:  mean={cont_df['Breakout_Magnitude_Pct'].mean():.3f}%  "
+          f"median={cont_df['Breakout_Magnitude_Pct'].median():.3f}%")
+    print(f"    Peak excursion:          mean={cont_df['Peak_Excursion_Pct'].mean():.3f}%  "
+          f"median={cont_df['Peak_Excursion_Pct'].median():.3f}%")
+    print(f"    Days to peak:            mean={cont_df['Days_To_Peak'].mean():.1f}  "
+          f"median={cont_df['Days_To_Peak'].median():.1f}")
+    print(f"    Velocity (%/day):        mean={cont_df['Velocity_Pct_Per_Day'].mean():.3f}  "
+          f"median={cont_df['Velocity_Pct_Per_Day'].median():.3f}")
 
     # Forward returns
     sign = 1 if direction == "bull" else -1
@@ -265,6 +332,159 @@ def plot_streak_vs_return(bull_df, bear_df):
     print("Saved continuation_streak_vs_return.png")
 
 
+def plot_velocity_distribution(bull_df, bear_df):
+    """Plot distributions of breakout magnitude, peak excursion, days to peak, and velocity."""
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    metrics = [
+        ("Breakout_Magnitude_Pct", "Breakout Day Magnitude %", axes[0, 0]),
+        ("Peak_Excursion_Pct", "Peak Excursion % (before mean reversion)", axes[0, 1]),
+        ("Days_To_Peak", "Days to Peak", axes[1, 0]),
+        ("Velocity_Pct_Per_Day", "Velocity (% per day)", axes[1, 1]),
+    ]
+
+    for col, label, ax in metrics:
+        bull_data = bull_df[col].clip(upper=bull_df[col].quantile(0.95))
+        bear_data = bear_df[col].clip(upper=bear_df[col].quantile(0.95))
+
+        ax.hist(bull_data, bins=50, alpha=0.6, color="forestgreen", label="Bullish", density=True)
+        ax.hist(bear_data, bins=50, alpha=0.6, color="crimson", label="Bearish", density=True)
+        ax.axvline(bull_df[col].median(), color="forestgreen", linestyle="--", linewidth=1.5,
+                   label=f"Bull median={bull_df[col].median():.2f}")
+        ax.axvline(bear_df[col].median(), color="crimson", linestyle="--", linewidth=1.5,
+                   label=f"Bear median={bear_df[col].median():.2f}")
+        ax.set_xlabel(label)
+        ax.set_ylabel("Density")
+        ax.legend(fontsize=8)
+
+    plt.suptitle("NIFTY 50 — Breakout Velocity & Magnitude Distributions", fontsize=14)
+    plt.tight_layout()
+    fig.savefig(OUTPUT_DIR / "velocity_distributions.png", dpi=150)
+    print("Saved velocity_distributions.png")
+
+
+def plot_magnitude_vs_continuation(bull_df, bear_df):
+    """Does a larger initial breakout magnitude predict longer continuation or bigger peak excursion?"""
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    for col_idx, (cont_df, label, color) in enumerate([
+        (bull_df, "Bullish", "forestgreen"),
+        (bear_df, "Bearish", "crimson"),
+    ]):
+        # Magnitude vs Peak Excursion
+        ax = axes[0, col_idx]
+        ax.scatter(cont_df["Breakout_Magnitude_Pct"], cont_df["Peak_Excursion_Pct"],
+                   alpha=0.15, s=8, color=color)
+        from scipy import stats as sp_stats
+        slope, intercept, r, p, se = sp_stats.linregress(
+            cont_df["Breakout_Magnitude_Pct"], cont_df["Peak_Excursion_Pct"])
+        x_line = np.linspace(0, cont_df["Breakout_Magnitude_Pct"].quantile(0.95), 100)
+        ax.plot(x_line, slope * x_line + intercept, color="black", linewidth=1.5,
+                label=f"r={r:.3f}")
+        ax.set_xlabel("Breakout Day Magnitude %")
+        ax.set_ylabel("Peak Excursion %")
+        ax.set_title(f"{label}: Magnitude vs Peak Excursion")
+        ax.legend()
+        ax.set_xlim(0, cont_df["Breakout_Magnitude_Pct"].quantile(0.95))
+        ax.set_ylim(0, cont_df["Peak_Excursion_Pct"].quantile(0.95))
+
+        # Magnitude vs Streak
+        ax = axes[1, col_idx]
+        # Bin magnitude into quintiles and show mean streak
+        cont_df_copy = cont_df.copy()
+        cont_df_copy["Mag_Bin"] = pd.qcut(cont_df_copy["Breakout_Magnitude_Pct"], q=5, duplicates="drop")
+        grouped = cont_df_copy.groupby("Mag_Bin", observed=True).agg(
+            Mean_Streak=("Streak", "mean"),
+            Mean_Peak=("Peak_Excursion_Pct", "mean"),
+            Mean_Velocity=("Velocity_Pct_Per_Day", "mean"),
+            Count=("Streak", "count"),
+        ).reset_index()
+
+        x = range(len(grouped))
+        bars = ax.bar(x, grouped["Mean_Streak"], color=color, alpha=0.7, edgecolor="white")
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"{b.left:.2f}-{b.right:.2f}" for b in grouped["Mag_Bin"]],
+                           rotation=30, ha="right", fontsize=8)
+        ax.set_xlabel("Breakout Magnitude % (quintiles)")
+        ax.set_ylabel("Mean Streak (days)")
+        ax.set_title(f"{label}: Breakout Size vs Continuation Length")
+        for i, (s, c) in enumerate(zip(grouped["Mean_Streak"], grouped["Count"])):
+            ax.text(i, s + 0.02, f"n={c}", ha="center", fontsize=8)
+
+    plt.suptitle("NIFTY 50 — Does Breakout Size Predict Continuation?", fontsize=14)
+    plt.tight_layout()
+    fig.savefig(OUTPUT_DIR / "magnitude_vs_continuation.png", dpi=150)
+    print("Saved magnitude_vs_continuation.png")
+
+
+def plot_velocity_by_streak(bull_df, bear_df):
+    """How does velocity change with streak length?"""
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+    for ax, cont_df, label, color in [
+        (axes[0], bull_df, "Bullish Breakout", "forestgreen"),
+        (axes[1], bear_df, "Bearish Breakout", "crimson"),
+    ]:
+        # Only streaks with at least 1 day of continuation
+        moving = cont_df[cont_df["Streak"] >= 1].copy()
+        max_s = min(8, moving["Streak"].max())
+        grouped = moving[moving["Streak"] <= max_s].groupby("Streak")
+
+        means_vel = grouped["Velocity_Pct_Per_Day"].mean()
+        means_peak = grouped["Peak_Excursion_Pct"].mean()
+        counts = grouped["Velocity_Pct_Per_Day"].count()
+
+        x = np.arange(len(means_vel))
+        width = 0.35
+        ax.bar(x - width / 2, means_vel, width, color=color, alpha=0.7, label="Velocity (%/day)")
+        ax.bar(x + width / 2, means_peak, width, color=color, alpha=0.35, label="Peak Excursion %")
+        ax.set_xticks(x)
+        ax.set_xticklabels(means_vel.index)
+        ax.set_xlabel("Streak Length (days)")
+        ax.set_ylabel("% ")
+        ax.set_title(f"{label}")
+        ax.legend()
+
+        for i, c in enumerate(counts):
+            ax.text(i, max(means_vel.iloc[i], means_peak.iloc[i]) + 0.05,
+                    f"n={c}", ha="center", fontsize=8)
+
+    plt.suptitle("NIFTY 50 — Velocity & Peak Excursion by Streak Length", fontsize=14)
+    plt.tight_layout()
+    fig.savefig(OUTPUT_DIR / "velocity_by_streak.png", dpi=150)
+    print("Saved velocity_by_streak.png")
+
+
+def print_velocity_summary(bull_df, bear_df):
+    """Print a concise velocity summary table."""
+    print(f"\n{'='*70}")
+    print("  VELOCITY SUMMARY")
+    print(f"{'='*70}")
+
+    header = f"  {'Metric':<35} {'Bullish':>12} {'Bearish':>12}"
+    print(header)
+    print("  " + "-" * 59)
+
+    metrics = [
+        ("Breakout day magnitude (median)", "Breakout_Magnitude_Pct", "median"),
+        ("Breakout day magnitude (mean)", "Breakout_Magnitude_Pct", "mean"),
+        ("Peak excursion (median)", "Peak_Excursion_Pct", "median"),
+        ("Peak excursion (mean)", "Peak_Excursion_Pct", "mean"),
+        ("Days to peak (median)", "Days_To_Peak", "median"),
+        ("Days to peak (mean)", "Days_To_Peak", "mean"),
+        ("Velocity %/day (median)", "Velocity_Pct_Per_Day", "median"),
+        ("Velocity %/day (mean)", "Velocity_Pct_Per_Day", "mean"),
+    ]
+
+    for label, col, agg in metrics:
+        bull_val = getattr(bull_df[col], agg)()
+        bear_val = getattr(bear_df[col], agg)()
+        fmt = ".3f" if "Days" not in label else ".1f"
+        print(f"  {label:<35} {bull_val:>12{fmt}}% {bear_val:>12{fmt}}%"
+              if "Days" not in label else
+              f"  {label:<35} {bull_val:>12{fmt}} {bear_val:>12{fmt}}")
+
+
 def save_summary(bull_df, bear_df):
     """Save summary CSV."""
     periods = [1, 2, 3, 5, 10, 20]
@@ -280,6 +500,12 @@ def save_summary(bull_df, bear_df):
             "Mean_Streak": round(cont_df["Streak"].mean(), 2),
             "Median_Streak": round(cont_df["Streak"].median(), 1),
             "Max_Streak": cont_df["Streak"].max(),
+            "Mean_Breakout_Mag_Pct": round(cont_df["Breakout_Magnitude_Pct"].mean(), 3),
+            "Median_Peak_Excursion_Pct": round(cont_df["Peak_Excursion_Pct"].median(), 3),
+            "Mean_Peak_Excursion_Pct": round(cont_df["Peak_Excursion_Pct"].mean(), 3),
+            "Median_Days_To_Peak": round(cont_df["Days_To_Peak"].median(), 1),
+            "Mean_Velocity_Pct_Per_Day": round(cont_df["Velocity_Pct_Per_Day"].mean(), 3),
+            "Median_Velocity_Pct_Per_Day": round(cont_df["Velocity_Pct_Per_Day"].median(), 3),
         }
         for n in periods:
             col = f"Fwd_{n}d_Ret"
@@ -314,6 +540,10 @@ def main():
     plot_win_rates(bull_df, bear_df)
     plot_breakout_timeline(df, bull_df, bear_df)
     plot_streak_vs_return(bull_df, bear_df)
+    plot_velocity_distribution(bull_df, bear_df)
+    plot_magnitude_vs_continuation(bull_df, bear_df)
+    plot_velocity_by_streak(bull_df, bear_df)
+    print_velocity_summary(bull_df, bear_df)
     save_summary(bull_df, bear_df)
 
     print("\nDone! All outputs in analysis/")
